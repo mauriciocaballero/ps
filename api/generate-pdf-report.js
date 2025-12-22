@@ -14,10 +14,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { psiData, siteName, siteUrl } = req.body;
-
-    if (!psiData || !psiData.lighthouseResult) {
-      return res.status(400).json({ error: 'Invalid PageSpeed data' });
+    // Parse el body si viene como string
+    let body = req.body;
+    if (typeof body === 'string') {
+      body = JSON.parse(body);
+    }
+    
+    const { psiData, siteName, siteUrl } = body;
+    
+    // Validación mejorada
+    if (!psiData) {
+      return res.status(400).json({ 
+        error: 'Missing psiData',
+        receivedBody: body 
+      });
     }
 
     // 1. Procesar los datos de PageSpeed
