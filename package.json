@@ -1,0 +1,17 @@
+{
+  "name": "pagespeed-pdf-generator",
+  "version": "1.0.0",
+  "description": "Generate PageSpeed Insights PDF reports",
+  "main": "api/generate-pdf-report.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "puppeteer-core": "^21.6.1",
+    "@sparticuz/chromium": "^119.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
