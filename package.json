@@ -3,11 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "main": "api/generate-pdf-report.js",
-  "dependencies": {
-    "puppeteer-core": "22.6.5",
-    "@sparticuz/chromium": "123.0.1"
-  },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   }
 }

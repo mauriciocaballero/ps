@@ -1,9 +1,5 @@
 // api/generate-pdf-report.js
-// Este endpoint hace TODO: recibe PageSpeed data, procesa Y genera el PDF
-
-// api/generate-pdf-report.js
-import chromium from '@sparticuz/chromium';
-import puppeteer from 'puppeteer-core';
+// Versión final sin Puppeteer - Solo procesamiento de datos
 
 export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'];
@@ -15,17 +11,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { psiData, siteName, siteUrl } = req.body;
+    const { psiData, clientName, siteUrl, email, phone } = req.body;
 
     if (!psiData || !psiData.lighthouseResult) {
       return res.status(400).json({ error: 'Invalid PageSpeed data' });
     }
 
+    // 1. Procesar los datos de PageSpeed
     const processedData = processPageSpeedData(psiData);
+
+    // 2. Extraer el nombre del sitio de la URL si no se proporciona
+    const siteName = extractSiteName(siteUrl);
+
+    // 3. Generar el HTML del reporte
     const html = generateReportHTML({
       ...processedData,
-      siteName: siteName || siteUrl,
+      clientName: clientName,
+      siteName: siteName,
       siteUrl: siteUrl,
+      email: email,
+      phone: phone,
       reportDate: new Date().toLocaleDateString('es-MX', {
         year: 'numeric',
         month: 'long',
@@ -33,55 +38,59 @@ export default async function handler(req, res) {
       })
     });
 
-    // Configuración específica para Vercel
-    const browser = await puppeteer.launch({
-      args: [
-        ...chromium.args,
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
-        '--no-sandbox',
-        '--disable-setuid-sandbox'
-      ],
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
-
-    const page = await browser.newPage();
-    await page.setContent(html, { 
-      waitUntil: 'networkidle0',
-      timeout: 30000 
-    });
-    
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '20px',
-        right: '20px',
-        bottom: '20px',
-        left: '20px'
-      }
-    });
-
-    await browser.close();
-
+    // 4. Regresar HTML + datos procesados
     res.status(200).json({
       success: true,
-      pdf: pdf.toString('base64'),
-      filename: `reporte-${siteName || 'website'}-${Date.now()}.pdf`,
-      ...processedData
+      html: html,
+      filename: `reporte-${sanitizeFilename(clientName)}-${Date.now()}.pdf`,
+      performanceScore: processedData.performanceScore,
+      performanceGrade: processedData.performanceGrade,
+      goodPointsCount: processedData.goodPointsCount,
+      badPointsCount: processedData.badPointsCount,
+      clientName: clientName,
+      siteName: siteName,
+      email: email,
+      phone: phone
     });
 
   } catch (error) {
-    console.error('Error generating PDF:', error);
+    console.error('Error processing data:', error);
     return res.status(500).json({ 
-      error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: error.message
     });
   }
+}
+
+// ============================================
+// FUNCIÓN AUXILIAR: Extraer nombre del sitio
+// ============================================
+
+function extractSiteName(url) {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    // Remover www. si existe
+    const domain = hostname.replace(/^www\./, '');
+    // Capitalizar primera letra
+    return domain.charAt(0).toUpperCase() + domain.slice(1);
+  } catch (e) {
+    return 'Sitio Web';
+  }
+}
+
+// ============================================
+// FUNCIÓN AUXILIAR: Sanitizar nombre de archivo
+// ============================================
+
+function sanitizeFilename(name) {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+    .replace(/[^a-z0-9]/gi, '-')      // Reemplazar caracteres especiales
+    .replace(/-+/g, '-')               // Remover guiones duplicados
+    .replace(/^-|-$/g, '')             // Remover guiones al inicio/fin
+    .toLowerCase()
+    .substring(0, 50);                 // Limitar longitud
 }
 
 // ============================================
@@ -338,8 +347,10 @@ function generateReportHTML(data) {
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;padding:40px;color:#1a1a1a;line-height:1.6;background:#fff}
 .header{border-bottom:4px solid #0066cc;padding-bottom:20px;margin-bottom:30px}
 .header h1{color:#0066cc;font-size:32px;margin-bottom:12px;font-weight:700}
-.site-info{font-size:16px;color:#333;margin-bottom:8px}
+.client-info{font-size:18px;color:#333;margin-bottom:8px}
+.site-info{font-size:16px;color:#666;margin-bottom:5px}
 .site-url{color:#666;font-size:14px;font-family:monospace;background:#f5f5f5;padding:6px 12px;border-radius:4px;display:inline-block}
+.contact{color:#888;font-size:13px;margin-top:8px}
 .date{color:#888;font-size:13px;margin-top:8px}
 .score-box{background:linear-gradient(135deg,${data.hasCriticalIssues ? '#eb3349,#f45c43' : '#667eea,#764ba2'});color:#fff;padding:40px;border-radius:12px;text-align:center;margin:30px 0;box-shadow:0 4px 20px rgba(0,0,0,0.15)}
 .score{font-size:72px;font-weight:700;margin-bottom:10px}
@@ -359,8 +370,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;pa
 
 <div class="header">
 <h1>Reporte de Rendimiento Web</h1>
-<div class="site-info"><strong>${data.siteName}</strong></div>
+<div class="client-info"><strong>Cliente:</strong> ${data.clientName}</div>
+<div class="site-info"><strong>Sitio:</strong> ${data.siteName}</div>
 <div class="site-url">${data.siteUrl}</div>
+${data.email ? `<div class="contact">Email: ${data.email}</div>` : ''}
+${data.phone ? `<div class="contact">Teléfono: ${data.phone}</div>` : ''}
 <div class="date">Generado: ${data.reportDate}</div>
 </div>
 
@@ -395,7 +409,8 @@ ${goodPointsHTML}
 <p>Las recomendaciones están ordenadas por prioridad e impacto.<br>
 Los emojis indican urgencia: 🔴 Crítico, 🟠 Alto, 🟡 Medio</p>
 <p style="margin-top:12px">
-Generado automáticamente con Google PageSpeed Insights
+Generado automáticamente con Google PageSpeed Insights<br>
+Para más información, contacta con nosotros
 </p>
 </div>
 
