@@ -21,10 +21,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid PageSpeed data' });
     }
 
-    // 1. Procesar los datos de PageSpeed
     const processedData = processPageSpeedData(psiData);
-
-    // 2. Generar el HTML del reporte
     const html = generateReportHTML({
       ...processedData,
       siteName: siteName || siteUrl,
@@ -36,13 +33,20 @@ export default async function handler(req, res) {
       })
     });
 
-    // 3. Generar el PDF con Puppeteer - CONFIGURACIÓN CORREGIDA
+    // Configuración específica para Vercel
     const browser = await puppeteer.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
+        '--no-sandbox',
+        '--disable-setuid-sandbox'
+      ],
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
-      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
@@ -64,7 +68,6 @@ export default async function handler(req, res) {
 
     await browser.close();
 
-    // 4. Regresar el PDF como base64
     res.status(200).json({
       success: true,
       pdf: pdf.toString('base64'),
@@ -80,7 +83,6 @@ export default async function handler(req, res) {
     });
   }
 }
-
 
 // ============================================
 // PROCESAMIENTO DE DATOS PAGESPEED
