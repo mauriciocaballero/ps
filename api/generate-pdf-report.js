@@ -1,8 +1,9 @@
 // api/generate-pdf-report.js
 // Este endpoint hace TODO: recibe PageSpeed data, procesa Y genera el PDF
 
-import puppeteer from 'puppeteer-core';
+// api/generate-pdf-report.js
 import chromium from '@sparticuz/chromium';
+import puppeteer from 'puppeteer-core';
 
 export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'];
@@ -14,20 +15,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Parse el body si viene como string
-    let body = req.body;
-    if (typeof body === 'string') {
-      body = JSON.parse(body);
-    }
-    
-    const { psiData, siteName, siteUrl } = body;
-    
-    // Validación mejorada
-    if (!psiData) {
-      return res.status(400).json({ 
-        error: 'Missing psiData',
-        receivedBody: body 
-      });
+    const { psiData, siteName, siteUrl } = req.body;
+
+    if (!psiData || !psiData.lighthouseResult) {
+      return res.status(400).json({ error: 'Invalid PageSpeed data' });
     }
 
     // 1. Procesar los datos de PageSpeed
@@ -45,16 +36,20 @@ export default async function handler(req, res) {
       })
     });
 
-    // 3. Generar el PDF con Puppeteer
+    // 3. Generar el PDF con Puppeteer - CONFIGURACIÓN CORREGIDA
     const browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
+      ignoreHTTPSErrors: true,
     });
 
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.setContent(html, { 
+      waitUntil: 'networkidle0',
+      timeout: 30000 
+    });
     
     const pdf = await page.pdf({
       format: 'A4',
@@ -74,7 +69,7 @@ export default async function handler(req, res) {
       success: true,
       pdf: pdf.toString('base64'),
       filename: `reporte-${siteName || 'website'}-${Date.now()}.pdf`,
-      ...processedData // También regresamos los datos por si los necesitas
+      ...processedData
     });
 
   } catch (error) {
@@ -85,6 +80,7 @@ export default async function handler(req, res) {
     });
   }
 }
+
 
 // ============================================
 // PROCESAMIENTO DE DATOS PAGESPEED
