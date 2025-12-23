@@ -218,12 +218,20 @@ function processPageSpeedData(psiData) {
     const description = stripMdLinks(audit.description || "").trim();
     const displayValue = audit.displayValue || "";
 
-    if (c.bucket === "info") {
+    if (
+      c.bucket === "info" ||
+      audit.scoreDisplayMode === "numeric" && audit.score === null ||
+      audit.scoreDisplayMode === "binary" && audit.score === null
+    ) {
       infoPointsAll.push({
         category,
         title,
-        description: description || "Información adicional.",
+        description:
+          description ||
+          "Este punto no afecta directamente la puntuación, pero aporta información relevante.",
         displayValue,
+        severity: "info",
+        emoji: "ℹ️",
       });
       continue;
     }
