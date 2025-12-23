@@ -1,5 +1,6 @@
 // api/generate-pdf-report.js
-// Versión final sin Puppeteer - Solo procesamiento de datos
+// Versión JSON-only - Sin generación de HTML ni PDF
+// Regresa datos procesados para que Make los envíe a PDF-API.io
 
 export default async function handler(req, res) {
   const apiKey = req.headers['x-api-key'];
@@ -20,37 +21,55 @@ export default async function handler(req, res) {
     // 1. Procesar los datos de PageSpeed
     const processedData = processPageSpeedData(psiData);
 
-    // 2. Extraer el nombre del sitio de la URL si no se proporciona
+    // 2. Extraer el nombre del sitio de la URL
     const siteName = extractSiteName(siteUrl);
 
-    // 3. Generar el HTML del reporte
-    const html = generateReportHTML({
-      ...processedData,
-      clientName: clientName,
-      siteName: siteName,
-      siteUrl: siteUrl,
-      email: email,
-      phone: phone,
-      reportDate: new Date().toLocaleDateString('es-MX', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
+    // 3. Preparar fecha del reporte
+    const reportDate = new Date().toLocaleDateString('es-MX', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
 
-    // 4. Regresar HTML + datos procesados
+    // 4. Regresar SOLO datos procesados en JSON
     res.status(200).json({
       success: true,
-      html: html,
       filename: `reporte-${sanitizeFilename(clientName)}-${Date.now()}.pdf`,
+      // Scores principales
       performanceScore: processedData.performanceScore,
+      seoScore: processedData.seoScore,
+      accessibilityScore: processedData.accessibilityScore,
+      bestPracticesScore: processedData.bestPracticesScore,
       performanceGrade: processedData.performanceGrade,
+      // Core Web Vitals
+      metrics: {
+        fcp: processedData.fcp,
+        lcp: processedData.lcp,
+        cls: processedData.cls,
+        tti: processedData.tti,
+        tbt: processedData.tbt,
+        si: processedData.si
+      },
+      // Recomendaciones detalladas
+      goodPoints: processedData.goodPoints,
+      badPoints: processedData.badPoints,
       goodPointsCount: processedData.goodPointsCount,
       badPointsCount: processedData.badPointsCount,
-      clientName: clientName,
-      siteName: siteName,
-      email: email,
-      phone: phone
+      hasCriticalIssues: processedData.hasCriticalIssues,
+      // Info del cliente
+      client: {
+        name: clientName,
+        email: email,
+        phone: phone
+      },
+      // Info del sitio
+      site: {
+        name: siteName,
+        url: siteUrl
+      },
+      // Metadata
+      reportDate: reportDate,
+      timestamp: Date.now()
     });
 
   } catch (error) {
@@ -62,16 +81,14 @@ export default async function handler(req, res) {
 }
 
 // ============================================
-// FUNCIÓN AUXILIAR: Extraer nombre del sitio
+// FUNCIÓN: Extraer nombre del sitio de URL
 // ============================================
 
 function extractSiteName(url) {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname;
-    // Remover www. si existe
     const domain = hostname.replace(/^www\./, '');
-    // Capitalizar primera letra
     return domain.charAt(0).toUpperCase() + domain.slice(1);
   } catch (e) {
     return 'Sitio Web';
@@ -79,18 +96,18 @@ function extractSiteName(url) {
 }
 
 // ============================================
-// FUNCIÓN AUXILIAR: Sanitizar nombre de archivo
+// FUNCIÓN: Sanitizar nombre de archivo
 // ============================================
 
 function sanitizeFilename(name) {
   return name
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remover acentos
-    .replace(/[^a-z0-9]/gi, '-')      // Reemplazar caracteres especiales
-    .replace(/-+/g, '-')               // Remover guiones duplicados
-    .replace(/^-|-$/g, '')             // Remover guiones al inicio/fin
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
     .toLowerCase()
-    .substring(0, 50);                 // Limitar longitud
+    .substring(0, 50);
 }
 
 // ============================================
@@ -276,12 +293,28 @@ function processPageSpeedData(auditData) {
   const topBadPoints = [...criticalIssues, ...badPoints].slice(0, 10);
   const topGoodPoints = goodPoints.slice(0, 10);
 
+  // Scores de todas las categorías
   const performanceScore = categories.performance 
     ? Math.round(categories.performance.score * 100) 
+    : 0;
+  
+  const seoScore = categories.seo 
+    ? Math.round(categories.seo.score * 100) 
+    : 0;
+  
+  const accessibilityScore = categories.accessibility 
+    ? Math.round(categories.accessibility.score * 100) 
+    : 0;
+  
+  const bestPracticesScore = categories['best-practices'] 
+    ? Math.round(categories['best-practices'].score * 100) 
     : 0;
 
   return {
     performanceScore,
+    seoScore,
+    accessibilityScore,
+    bestPracticesScore,
     performanceGrade: 
       performanceScore >= 90 ? 'A - Excelente' : 
       performanceScore >= 75 ? 'B - Bueno' : 
@@ -299,122 +332,4 @@ function processPageSpeedData(auditData) {
     goodPointsCount: topGoodPoints.length,
     badPointsCount: topBadPoints.length
   };
-}
-
-// ============================================
-// GENERACIÓN DEL HTML
-// ============================================
-
-function generateReportHTML(data) {
-  const goodPointsHTML = data.goodPoints.map((p, i) => `
-    <div style="margin-bottom:20px">
-      <div style="font-weight:600;color:#059669;margin-bottom:5px">
-        ${i + 1}. ${p.emoji} ${p.category}: ${p.title}
-      </div>
-      <div style="padding-left:25px;color:#666;font-size:13px">
-        ${p.description}
-        ${p.wpPlugin !== 'N/A' ? `<br><em>Plugin: ${p.wpPlugin}</em>` : ''}
-      </div>
-    </div>
-  `).join('');
-
-  const badPointsHTML = data.badPoints.map((p, i) => {
-    const impactLabel = 
-      p.impact === 'crítico' ? '🔴 CRÍTICO' : 
-      p.impact === 'alto' ? '🟠 ALTO' : '🟡 MEDIO';
-    
-    return `
-      <div style="margin-bottom:25px;padding:15px;background:#fef2f2;border-left:4px solid #ef4444;border-radius:4px">
-        <div style="font-weight:600;color:#dc2626;margin-bottom:8px">
-          ${i + 1}. ${impactLabel} - ${p.category}: ${p.title}
-        </div>
-        <div style="padding-left:25px;color:#333;font-size:13px;line-height:1.7">
-          <strong>💡 Solución:</strong> ${p.description}
-          ${p.wpPlugin !== 'N/A' ? `<br><strong>🔧 Plugin recomendado:</strong> ${p.wpPlugin}` : ''}
-          ${p.displayValue ? `<br><strong>📊 Mejora estimada:</strong> ${p.displayValue}` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  return `
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;padding:40px;color:#1a1a1a;line-height:1.6;background:#fff}
-.header{border-bottom:4px solid #0066cc;padding-bottom:20px;margin-bottom:30px}
-.header h1{color:#0066cc;font-size:32px;margin-bottom:12px;font-weight:700}
-.client-info{font-size:18px;color:#333;margin-bottom:8px}
-.site-info{font-size:16px;color:#666;margin-bottom:5px}
-.site-url{color:#666;font-size:14px;font-family:monospace;background:#f5f5f5;padding:6px 12px;border-radius:4px;display:inline-block}
-.contact{color:#888;font-size:13px;margin-top:8px}
-.date{color:#888;font-size:13px;margin-top:8px}
-.score-box{background:linear-gradient(135deg,${data.hasCriticalIssues ? '#eb3349,#f45c43' : '#667eea,#764ba2'});color:#fff;padding:40px;border-radius:12px;text-align:center;margin:30px 0;box-shadow:0 4px 20px rgba(0,0,0,0.15)}
-.score{font-size:72px;font-weight:700;margin-bottom:10px}
-.grade{font-size:22px;opacity:0.95}
-.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin:30px 0}
-.metric{background:#f8f9fa;border:2px solid #e5e7eb;padding:20px;border-radius:8px;text-align:center}
-.metric .label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;font-weight:600}
-.metric .value{font-size:24px;font-weight:700}
-.section{margin:40px 0}
-.section h2{font-size:24px;margin-bottom:20px;padding-bottom:12px;border-bottom:3px solid #e5e7eb}
-.section.good h2{color:#059669;border-bottom-color:#10b981}
-.section.bad h2{color:#dc2626;border-bottom-color:#ef4444}
-.footer{margin-top:50px;padding-top:20px;border-top:2px solid #e5e7eb;text-align:center;color:#6b7280;font-size:12px;line-height:1.8}
-</style>
-</head>
-<body>
-
-<div class="header">
-<h1>Reporte de Rendimiento Web</h1>
-<div class="client-info"><strong>Cliente:</strong> ${data.clientName}</div>
-<div class="site-info"><strong>Sitio:</strong> ${data.siteName}</div>
-<div class="site-url">${data.siteUrl}</div>
-${data.email ? `<div class="contact">Email: ${data.email}</div>` : ''}
-${data.phone ? `<div class="contact">Teléfono: ${data.phone}</div>` : ''}
-<div class="date">Generado: ${data.reportDate}</div>
-</div>
-
-<div class="score-box">
-<div class="score">${data.performanceScore}</div>
-<div class="grade">${data.performanceGrade}</div>
-</div>
-
-<div class="metrics">
-<div class="metric"><div class="label">FCP</div><div class="value">${data.fcp}</div></div>
-<div class="metric"><div class="label">LCP</div><div class="value">${data.lcp}</div></div>
-<div class="metric"><div class="label">CLS</div><div class="value">${data.cls}</div></div>
-<div class="metric"><div class="label">TTI</div><div class="value">${data.tti}</div></div>
-<div class="metric"><div class="label">TBT</div><div class="value">${data.tbt}</div></div>
-<div class="metric"><div class="label">Speed Index</div><div class="value">${data.si}</div></div>
-</div>
-
-<div class="section bad">
-<h2>⚠ Oportunidades de Mejora (${data.badPointsCount} puntos)</h2>
-${badPointsHTML}
-</div>
-
-<div style="page-break-before:always"></div>
-
-<div class="section good">
-<h2>✓ Aspectos Bien Implementados (${data.goodPointsCount} puntos)</h2>
-${goodPointsHTML}
-</div>
-
-<div class="footer">
-<p><strong>¿Cómo usar este reporte?</strong></p>
-<p>Las recomendaciones están ordenadas por prioridad e impacto.<br>
-Los emojis indican urgencia: 🔴 Crítico, 🟠 Alto, 🟡 Medio</p>
-<p style="margin-top:12px">
-Generado automáticamente con Google PageSpeed Insights<br>
-Para más información, contacta con nosotros
-</p>
-</div>
-
-</body>
-</html>
-  `;
 }
